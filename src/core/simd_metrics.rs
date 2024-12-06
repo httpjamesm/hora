@@ -9,101 +9,85 @@ pub trait SIMDOptmized<T = Self> {
 }
 
 macro_rules! simd_optimized_impl {
-    (  $type_id:ident, $simd_type:ident ,$size: expr ,$simd_size:expr) => {
+    ( $type_id:ident, $simd_type:ident , $size:expr ) => {
         impl SIMDOptmized for $type_id {
             fn dot_product(a: &[$type_id], b: &[$type_id]) -> Result<$type_id, &'static str> {
                 assert_eq!(a.len(), b.len());
-
-                #[cfg(feature = $simd_size)]
+                #[cfg(feature = "simd")]
                 {
                     let size = a.len() - (a.len() % $size);
-                    let c = a
-                        .chunks_exact($size)
-                        .map($simd_type::from_slice_unaligned)
-                        .zip(b.chunks_exact($size).map($simd_type::from_slice_unaligned))
-                        .map(|(a, b)| a * b)
-                        .sum::<$simd_type>()
+                    let c = a.chunks_exact($size)
+                        .zip(b.chunks_exact($size))
+                        .map(|(a_chunk, b_chunk)| {
+                            let av = $simd_type::from_slice_unaligned(a_chunk);
+                            let bv = $simd_type::from_slice_unaligned(b_chunk);
+                            av * bv
+                        })
+                        .fold($simd_type::splat(0.0), |acc, x| acc + x)
                         .sum();
                     let d: $type_id = a[size..].iter().zip(&b[size..]).map(|(p, q)| p * q).sum();
                     Ok(c + d)
                 }
-                #[cfg(not(feature = $simd_size))]
+                #[cfg(not(feature = "simd"))]
                 {
-                    Ok(a.iter().zip(b).map(|(p, q)| p * q).sum::<$type_id>())
+                    Ok(a.iter().zip(b).map(|(p, q)| p * q).sum())
                 }
             }
 
-            fn manhattan_distance(
-                a: &[$type_id],
-                b: &[$type_id],
-            ) -> Result<$type_id, &'static str> {
+            fn manhattan_distance(a: &[$type_id], b: &[$type_id]) -> Result<$type_id, &'static str> {
                 assert_eq!(a.len(), b.len());
-
-                #[cfg(feature = $simd_size)]
+                #[cfg(feature = "simd")]
                 {
                     let size = a.len() - (a.len() % $size);
-                    let c = a
-                        .chunks_exact($size)
-                        .map($simd_type::from_slice_unaligned)
-                        .zip(b.chunks_exact($size).map($simd_type::from_slice_unaligned))
-                        .map(|(a, b)| (a - b).abs())
-                        .sum::<$simd_type>()
+                    let c = a.chunks_exact($size)
+                        .zip(b.chunks_exact($size))
+                        .map(|(a_chunk, b_chunk)| {
+                            let av = $simd_type::from_slice_unaligned(a_chunk);
+                            let bv = $simd_type::from_slice_unaligned(b_chunk);
+                            (av - bv).abs()
+                        })
+                        .fold($simd_type::splat(0.0), |acc, x| acc + x)
                         .sum();
-                    let d: $type_id = a[size..]
-                        .iter()
-                        .zip(&b[size..])
+                    let d: $type_id = a[size..].iter().zip(&b[size..])
                         .map(|(p, q)| (p - q).abs())
                         .sum();
                     Ok(c + d)
                 }
-
-                #[cfg(not(feature = $simd_size))]
+                #[cfg(not(feature = "simd"))]
                 {
-                    Ok(a.iter()
-                        .zip(b)
-                        .map(|(p, q)| (p - q).abs())
-                        .sum::<$type_id>())
+                    Ok(a.iter().zip(b).map(|(p, q)| (p - q).abs()).sum())
                 }
             }
 
-            fn euclidean_distance(
-                a: &[$type_id],
-                b: &[$type_id],
-            ) -> Result<$type_id, &'static str> {
+            fn euclidean_distance(a: &[$type_id], b: &[$type_id]) -> Result<$type_id, &'static str> {
                 same_dimension(a, b)?;
-
-                #[cfg(feature = $simd_size)]
+                #[cfg(feature = "simd")]
                 {
                     let size = a.len() - (a.len() % $size);
-                    let c = a
-                        .chunks_exact($size)
-                        .map($simd_type::from_slice_unaligned)
-                        .zip(b.chunks_exact($size).map($simd_type::from_slice_unaligned))
-                        .map(|(a, b)| {
-                            let c = (a - b);
-                            c * c
+                    let c = a.chunks_exact($size)
+                        .zip(b.chunks_exact($size))
+                        .map(|(a_chunk, b_chunk)| {
+                            let av = $simd_type::from_slice_unaligned(a_chunk);
+                            let bv = $simd_type::from_slice_unaligned(b_chunk);
+                            let diff = av - bv;
+                            diff * diff
                         })
-                        .sum::<$simd_type>()
+                        .fold($simd_type::splat(0.0), |acc, x| acc + x)
                         .sum();
-
-                    let d: $type_id = a[size..]
-                        .iter()
-                        .zip(&b[size..])
+                    let d: $type_id = a[size..].iter().zip(&b[size..])
                         .map(|(p, q)| (p - q).powi(2))
                         .sum();
-                    Ok((d + c))
+                    Ok(c + d)
                 }
-                #[cfg(not(feature = $simd_size))]
+                #[cfg(not(feature = "simd"))]
                 {
-                    Ok(a.iter()
-                        .zip(b)
-                        .map(|(p, q)| (p - q).powi(2))
-                        .sum::<$type_id>())
+                    Ok(a.iter().zip(b).map(|(p, q)| (p - q).powi(2)).sum())
                 }
             }
         }
     };
 }
 
-simd_optimized_impl!(f32, f32x16, 16, "simd");
-simd_optimized_impl!(f64, f64x8, 8, "simd");
+// Implement for f32 and f64 using the corrected macro
+simd_optimized_impl!(f32, f32x16, 16);
+simd_optimized_impl!(f64, f64x8, 8);
